@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.vercel/
+.vite/
+.playwright-mcp/
+.claude/
+*.tsbuildinfo
+
+1주차/_cotbuild/

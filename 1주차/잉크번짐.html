@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>먹 번짐 · Ink Bloom</title>
+<style>
+  :root{
+    --paper:#efe7d4; --paper2:#e6dcc4;
+    --ink:#15171b; --muted:#8b8470;
+    --line:#d8ccb0; --seal:#b8402f;
+    --card:#f5efe0;
+    --shadow:0 18px 44px rgba(50,40,20,.18);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+    color:var(--ink);
+    background:radial-gradient(130% 120% at 50% 0%,#f3ecdb,#e3d8be);
+    min-height:100%;display:flex;flex-direction:column;align-items:center;
+    padding:30px 16px 44px;user-select:none;
+  }
+  .wrap{width:100%;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:16px}
+  header{text-align:center}
+  header h1{font-size:23px;margin:0;letter-spacing:6px;font-weight:800}
+  header .en{margin:4px 0 0;color:var(--muted);font-size:12px;letter-spacing:3px;text-transform:uppercase}
+
+  .badge{display:inline-flex;align-items:center;gap:8px;padding:7px 16px;border-radius:999px;font-size:13px;font-weight:700;
+    background:#e7dcc2;color:#6b6450;border:1px solid var(--line);transition:.3s}
+  .badge .dot{width:8px;height:8px;border-radius:50%;background:#6b6450;transition:.3s}
+  .badge[data-s="CHARGING"]{color:#4a4636}
+  .badge[data-s="RUNNING"]{background:#1c1f24;color:#e7dcc2;border-color:#2a2d33}
+  .badge[data-s="RUNNING"] .dot{background:#cdbf9d;animation:pulse 1.6s infinite}
+  .badge[data-s="PAUSED"]{background:#e9e0cc;color:#7a7258}
+  .badge[data-s="DONE"]{background:#f0e2d8;color:var(--seal);border-color:#e6c9bf}
+  .badge[data-s="DONE"] .dot{background:var(--seal)}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(205,191,157,.6)}70%{box-shadow:0 0 0 9px rgba(205,191,157,0)}100%{box-shadow:0 0 0 0 rgba(205,191,157,0)}}
+
+  .stage{width:340px;height:340px;border-radius:6px;background:var(--card);
+    box-shadow:var(--shadow);border:1px solid var(--line);cursor:grab;touch-action:none;position:relative;overflow:hidden}
+  .stage:active{cursor:grabbing}
+  .stage canvas{display:block;width:340px;height:340px}
+
+  .hint{min-height:20px;color:var(--muted);font-size:13.5px;text-align:center;transition:.3s}
+
+  .gaugewrap{width:300px;display:flex;align-items:center;gap:10px}
+  .gaugewrap .lab{font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap;letter-spacing:.3px}
+  .gauge{flex:1;height:6px;border-radius:99px;background:#ddd0b4;overflow:hidden}
+  .gauge>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#6b6450,#1c1f24);transition:width .2s}
+  .gaugewrap .pct{font-size:11px;font-weight:800;color:#4a4636;font-variant-numeric:tabular-nums;width:30px;text-align:right}
+
+  .controls{display:flex;justify-content:center;width:300px}
+  #resetBtn{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;height:48px;border-radius:12px;
+    font-family:inherit;font-weight:800;font-size:15px;cursor:pointer;transition:.2s;
+    background:#e7dcc2;border:1.5px solid #b9ab8a;color:#4a4636}
+  #resetBtn:hover{transform:translateY(-1px)}
+  #resetBtn.idle{opacity:.34;pointer-events:none}
+  #resetBtn.primary{background:var(--seal);border-color:var(--seal);color:#fff;box-shadow:0 8px 18px rgba(184,64,47,.35);animation:pop .5s ease}
+  @keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.04)}100%{transform:scale(1)}}
+
+  footer{color:var(--muted);font-size:11px;text-align:center;line-height:1.6;margin-top:4px}
+  .toast{position:fixed;left:50%;bottom:30px;background:#1c1f24;color:#f0e8d6;padding:10px 18px;border-radius:11px;font-size:13px;font-weight:600;
+    opacity:0;pointer-events:none;transition:.25s;transform:translateX(-50%) translateY(18px)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>먹 번짐</h1>
+      <p class="en">Ink Bloom</p>
+    </header>
+
+    <div class="badge" id="badge" data-s="IDLE"><span class="dot"></span><span id="badgeText">대기</span></div>
+
+    <div class="stage" id="stage"><canvas id="cv" width="340" height="340"></canvas></div>
+
+    <div class="hint" id="hint">위로 드래그 — 먹 머금기</div>
+
+    <div class="gaugewrap"><span class="lab" id="gLab">먹 머금음</span><div class="gauge"><i id="gFill"></i></div><span class="pct" id="gPct">0%</span></div>
+
+    <div class="controls"><button id="resetBtn" class="idle">↺ 새 종이</button></div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  "use strict";
+  // ===== 상수 =====
+  const CAP = 100;          // 머금을 수 있는 최대 먹
+  const UNIT_PER_PX = 0.5;  // 드래그 1px당 머금는 먹
+  const RATE = 6;           // 초당 스미는(소모) 먹 → 가득 차면 ~16초간 번짐
+  const TAP = 8;            // 탭/드래그 구분 임계
+  const TICK = 80;
+
+  // ===== 상태/변수 =====
+  let state="IDLE", ink=0, charged=0, ticker=null, last=0;
+  let pressing=false, startY=0, inkAtPress=0, isDrag=false;
+
+  const $=id=>document.getElementById(id);
+  const stage=$("stage"), badge=$("badge"), badgeText=$("badgeText"), hintEl=$("hint"),
+        gLab=$("gLab"), gFill=$("gFill"), gPct=$("gPct"), resetBtn=$("resetBtn"), toast=$("toast");
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const easeOut=t=>1-Math.pow(1-t,2.4);
+  let toastT=null; function showToast(m){toast.textContent=m;toast.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>toast.classList.remove("show"),1500);}
+
+  const META={
+    IDLE:{txt:"대기",hint:"위로 드래그 — 먹 머금기",glab:"먹 머금음"},
+    CHARGING:{txt:"머금는 중",hint:"탭 — 번지기 시작",glab:"먹 머금음"},
+    RUNNING:{txt:"번지는 중",hint:"탭 — 잠시 멈춤",glab:"남은 먹"},
+    PAUSED:{txt:"멈춤",hint:"탭 — 이어서",glab:"남은 먹"},
+    DONE:{txt:"스밈 완료",hint:"",glab:"남은 먹"},
+  };
+
+  function render(){
+    const m=META[state];
+    badge.dataset.s=state; badgeText.textContent=m.txt; hintEl.textContent=m.hint;
+    gLab.textContent=m.glab;
+    resetBtn.classList.toggle("idle",state==="IDLE");
+    resetBtn.classList.toggle("primary",state==="DONE");
+    resetBtn.textContent=(state==="DONE")?"↺ 새 종이":"↺ 새 종이";
+    const pct=clamp(ink/CAP,0,1);
+    gFill.style.width=(pct*100)+"%"; gPct.textContent=Math.round(pct*100)+"%";
+  }
+
+  /* ===================== 먹 번짐 캔버스 ===================== */
+  const cv=$("cv"), ctx=cv.getContext("2d");
+  const W=340,H=340,cx=170,cy=164;
+  let ox=cx, oy=cy, curX=cx, curY=cy;   // 번짐 원점(터치 위치)
+  (function(){const dpr=window.devicePixelRatio||1;cv.width=W*dpr;cv.height=H*dpr;cv.style.width=W+"px";cv.style.height=H+"px";ctx.setTransform(dpr,0,0,dpr,0,0);})();
+
+  const TAU=Math.PI*2;
+  // 결정적 난수
+  let _s=20240607; const rnd=()=>{_s=(_s*1103515245+12345)&0x7fffffff;return _s/0x7fffffff;};
+  // 모세관 번짐 경계: 각도별 성장 편향(손가락 모양). 부드럽게 다듬은 뒤 가는 갈래(finger) 추가
+  const M=140, bias=new Array(M);
+  for(let i=0;i<M;i++) bias[i]=1+(rnd()*2-1)*0.30;
+  for(let s=0;s<3;s++){const b=bias.slice();for(let i=0;i<M;i++) bias[i]=(b[(i-1+M)%M]+b[i]*2+b[(i+1)%M])/4;}
+  for(let t=0;t<11;t++){const c=Math.floor(rnd()*M), amp=0.14+rnd()*0.30, w=2+Math.floor(rnd()*3);
+    for(let j=-w;j<=w;j++) bias[(c+j+M)%M]+=amp*(1-Math.abs(j)/(w+1));}
+  // 깃털(번지는 앞단) — 실제 손가락 경계를 따라 분포
+  const feather=[]; for(let i=0;i<210;i++) feather.push({ai:Math.floor(rnd()*M), dout:1.0+rnd()*0.14, r:0.7+rnd()*2.4, al:0.07+rnd()*0.16});
+  // 스밈 자국(동심 tide ring)이 생기는 진행 지점
+  const RINGP=[0.16,0.30,0.44,0.58,0.70,0.82];
+  // 한지 섬유 결
+  const fibers=[]; for(let i=0;i<260;i++){fibers.push({x:rnd()*W,y:rnd()*H,r:0.4+rnd()*1.1,al:0.025+rnd()*0.05,dark:rnd()<0.5});}
+  // 안쪽 농담 얼룩
+  const mottle=[]; for(let i=0;i<12;i++){mottle.push({a:rnd()*TAU,d:0.12+rnd()*0.5,s:0.16+rnd()*0.24,al:0.12+rnd()*0.16});}
+
+  const INK="21,23,27";
+
+  function paper(){
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,"#f6f0e1"); g.addColorStop(1,"#ece2cc");
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    for(const f of fibers){ctx.fillStyle=(f.dark?"rgba(120,105,75,":"rgba(255,250,235,")+f.al+")";ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,7);ctx.fill();}
+  }
+
+  // 모세관 번짐 경계(손가락 모양). rough가 클수록 경계가 거칠어짐
+  function contourPath(rb, rough){
+    const pts=[];
+    for(let i=0;i<M;i++){const ang=i/M*TAU, rr=rb*(1+(bias[i]-1)*rough);
+      pts.push([ox+Math.cos(ang)*rr, oy+Math.sin(ang)*rr*0.97]);}
+    const mid=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+    ctx.beginPath();
+    const m0=mid(pts[M-1],pts[0]); ctx.moveTo(m0[0],m0[1]);
+    for(let i=0;i<M;i++){const cur=pts[i], nx=pts[(i+1)%M], mm=mid(cur,nx); ctx.quadraticCurveTo(cur[0],cur[1],mm[0],mm[1]);}
+    ctx.closePath();
+  }
+
+  function bloom(rb, alpha, p, finalR, pr){
+    const rough=0.4+0.95*p;             // 번질수록 경계가 거칠어짐(모세관 갈래 심화)
+    ctx.save();
+    ctx.globalCompositeOperation="multiply";
+    // 1) 본체 — 손가락 경계 + 끝까지 또렷하게
+    const gr=rb*1.5;
+    const g=ctx.createRadialGradient(ox,oy,0,ox,oy,gr);
+    g.addColorStop(0,`rgba(${INK},${alpha})`);
+    g.addColorStop(0.42,`rgba(${INK},${alpha*0.9})`);
+    g.addColorStop(0.62,`rgba(${INK},${alpha*0.58})`);
+    g.addColorStop(0.82,`rgba(${INK},${alpha*0.26})`);
+    g.addColorStop(1,`rgba(${INK},0)`);
+    ctx.fillStyle=g; contourPath(rb,rough); ctx.fill();
+    // 2) 안쪽 농담 얼룩
+    for(const m of mottle){const mx=ox+Math.cos(m.a)*rb*m.d, my=oy+Math.sin(m.a)*rb*m.d*0.97, ms=rb*m.s;
+      const mg=ctx.createRadialGradient(mx,my,0,mx,my,ms);
+      mg.addColorStop(0,`rgba(${INK},${alpha*m.al})`); mg.addColorStop(1,`rgba(${INK},0)`);
+      ctx.fillStyle=mg; ctx.beginPath();ctx.arc(mx,my,ms,0,TAU);ctx.fill();}
+    // 3) 스밈 자국(동심 tide ring) — 과거 번짐 앞단이 결을 따라 자국으로 남음
+    ctx.lineJoin="round";
+    for(let i=0;i<RINGP.length;i++){ if(p<RINGP[i]) break;
+      const ri=lerp(pr,finalR,easeOut(RINGP[i])), roughi=0.4+0.95*RINGP[i];
+      ctx.strokeStyle=`rgba(${INK},${alpha*0.3})`; ctx.lineWidth=2.4;
+      contourPath(ri,roughi); ctx.stroke();
+    }
+    // 4) 떨군 자리(진한 중심핵 — 오래 남음)
+    const cR=rb*0.4, cg=ctx.createRadialGradient(ox,oy,0,ox,oy,cR);
+    cg.addColorStop(0,`rgba(${INK},${Math.min(0.96,alpha*1.32)})`);
+    cg.addColorStop(0.7,`rgba(${INK},${alpha*0.7})`);
+    cg.addColorStop(1,`rgba(${INK},0)`);
+    ctx.fillStyle=cg; ctx.beginPath();ctx.arc(ox,oy,cR,0,TAU);ctx.fill();
+    // 5) 깃털 경계(번지는 앞단 — 실제 손가락 끝을 따라)
+    for(const f of feather){const ang=f.ai/M*TAU, rr=rb*(1+(bias[f.ai]-1)*rough)*f.dout;
+      const fx=ox+Math.cos(ang)*rr, fy=oy+Math.sin(ang)*rr*0.97;
+      ctx.fillStyle=`rgba(${INK},${alpha*f.al})`; ctx.beginPath();ctx.arc(fx,fy,f.r,0,TAU);ctx.fill();}
+    ctx.restore();
+  }
+
+  function seal(a){ // 낙관(붉은 도장)
+    if(a<=0.01) return;
+    const sx=W-46, sy=H-46, s=30;
+    ctx.save(); ctx.globalAlpha=a;
+    ctx.fillStyle="#b8402f";
+    // 둥근 사각 도장
+    const r=5; ctx.beginPath();
+    ctx.moveTo(sx+r,sy);ctx.arcTo(sx+s,sy,sx+s,sy+s,r);ctx.arcTo(sx+s,sy+s,sx,sy+s,r);ctx.arcTo(sx,sy+s,sx,sy,r);ctx.arcTo(sx,sy,sx+s,sy,r);ctx.closePath();ctx.fill();
+    // 음각 흰 획(추상 글자)
+    ctx.strokeStyle="rgba(245,239,224,.92)"; ctx.lineWidth=2.4; ctx.lineCap="round";
+    ctx.beginPath();
+    ctx.moveTo(sx+8,sy+9); ctx.lineTo(sx+22,sy+9);
+    ctx.moveTo(sx+15,sy+9); ctx.lineTo(sx+15,sy+22);
+    ctx.moveTo(sx+9,sy+16); ctx.lineTo(sx+21,sy+16);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 시각값 이징
+  let visR=0, visA=0, visSeal=0;
+  function targets(){
+    if(state==="IDLE") return {R:0, A:0, p:0, finalR:0, pr:0, sealT:0};
+    if(state==="CHARGING"){ const pr=lerp(5,18,ink/CAP); return {R:pr, A:0.92, p:0, finalR:pr, pr, sealT:0, pending:1}; }
+    // RUNNING / PAUSED / DONE
+    const base=charged>0?charged:1;
+    const p=clamp(1-ink/base,0,1);                  // 번짐 진행
+    const finalR=lerp(66,128,charged/CAP);
+    const pr=lerp(4,15,charged/CAP);
+    const R=lerp(pr, finalR, easeOut(p));
+    const A=lerp(0.94, 0.68, p);                     // 다 스며도 또렷하게(연해지지 않음)
+    const sealT=(state==="DONE")?1:0;
+    return {R, A, p, finalR, pr, sealT};
+  }
+  function lerp(a,b,t){return a+(b-a)*t;}
+
+  function loop(){
+    const t=targets();
+    visR+=(t.R-visR)*0.16; visA+=(t.A-visA)*0.16; visSeal+=(t.sealT-visSeal)*0.08;
+    ctx.clearRect(0,0,W,H);
+    paper();
+    if(state==="CHARGING"){
+      // 머금은 먹 = 붓 끝 대기 방울 (터치한 위치에)
+      const pr=lerp(4,15,ink/CAP);
+      ctx.save();ctx.globalCompositeOperation="multiply";
+      const g=ctx.createRadialGradient(ox,oy,0,ox,oy,pr*1.5);
+      g.addColorStop(0,`rgba(${INK},0.94)`);g.addColorStop(0.6,`rgba(${INK},0.6)`);g.addColorStop(1,`rgba(${INK},0)`);
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(ox,oy,pr*1.5,0,TAU);ctx.fill();ctx.restore();
+    } else if(visR>0.5){
+      bloom(visR, visA, t.p, t.finalR, t.pr);
+    }
+    seal(visSeal);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  /* ===================== 상태 전이 ===================== */
+  function toIdle(){state="IDLE";ink=0;charged=0;visR=0;visA=0;visSeal=0;ox=cx;oy=cy;stopTick();render();}
+  function startCharging(){if(state==="IDLE")state="CHARGING";}
+  function commitCharge(){if(state==="CHARGING"){if(ink<=0)toIdle();else render();}}
+  function startBloom(){charged=ink;state="RUNNING";startTick();render();}
+  function pause(){state="PAUSED";stopTick();render();}
+  function resume(){state="RUNNING";startTick();render();}
+  function finish(){ink=0;state="DONE";stopTick();render();showToast("종이에 다 스몄습니다 · 낙관 🔴");}
+  function handleTap(){
+    if(state==="IDLE"){showToast("먼저 위로 드래그해 먹을 머금으세요");return;}
+    if(state==="CHARGING"){startBloom();return;}
+    if(state==="RUNNING"){pause();return;}
+    if(state==="PAUSED"){resume();return;}
+  }
+  function startTick(){stopTick();last=Date.now();ticker=setInterval(()=>{const now=Date.now(),dt=(now-last)/1000;last=now;ink=clamp(ink-dt*RATE,0,CAP);if(ink<=0){finish();return;}render();},TICK);}
+  function stopTick(){if(ticker){clearInterval(ticker);ticker=null;}}
+
+  // 입력
+  stage.addEventListener("pointerdown",e=>{
+    pressing=true;isDrag=false;startY=e.clientY;inkAtPress=ink;
+    const rect=stage.getBoundingClientRect();
+    curX=clamp(e.clientX-rect.left,58,W-58); curY=clamp(e.clientY-rect.top,58,H-58);
+    if(state==="IDLE"||state==="CHARGING"){ ox=curX; oy=curY; }   // 터치한 위치가 번짐 원점
+    try{stage.setPointerCapture(e.pointerId);}catch(_){}
+  });
+  stage.addEventListener("pointermove",e=>{
+    if(!pressing)return;
+    const dy=startY-e.clientY;
+    if(Math.abs(dy)>=TAP)isDrag=true;
+    if(!isDrag)return;
+    const canCharge=(state==="IDLE"&&dy>0)||state==="CHARGING";
+    if(canCharge){startCharging();ink=clamp(inkAtPress+dy*UNIT_PER_PX,0,CAP);render();}
+  });
+  function endPress(){if(!pressing)return;pressing=false;if(isDrag)commitCharge();else handleTap();}
+  stage.addEventListener("pointerup",endPress);
+  stage.addEventListener("pointercancel",endPress);
+
+  let armed=false,armT=null;
+  resetBtn.addEventListener("click",()=>{
+    if(state==="RUNNING"&&!armed){armed=true;showToast("한 번 더 눌러 새 종이");clearTimeout(armT);armT=setTimeout(()=>armed=false,2000);return;}
+    armed=false;clearTimeout(armT);toIdle();
+  });
+
+  render();
+
+  // (선택) 스크린샷 프리셋 — ?state=charging|running|paused|done
+  const _p=new URLSearchParams(location.search).get("state");
+  if(_p){
+    const RR=(c,p)=>lerp(lerp(5,18,c/CAP),lerp(80,170,c/CAP),easeOut(p)), AA=p=>lerp(0.94,0.68,p);
+    if(_p==="charging"){state="CHARGING";ink=64;}
+    else if(_p==="running"){charged=82;ink=46;state="RUNNING";const p=1-ink/charged;visR=RR(charged,p);visA=AA(p);}
+    else if(_p==="paused"){charged=82;ink=24;state="PAUSED";const p=1-ink/charged;visR=RR(charged,p);visA=AA(p);}
+    else if(_p==="done"){charged=82;ink=0;state="DONE";visR=lerp(80,170,charged/CAP);visA=0.68;visSeal=1;}
+    render();
+  }
+})();
+</script>
+</body>
+</html>

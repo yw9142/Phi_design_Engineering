@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>모래시계 — 집중 타이머</title>
+<style>
+  :root{
+    --bg1:#f4efe6; --bg2:#e9e0d1;
+    --ink:#2b2622; --muted:#8a8073;
+    --card:#fbf7ef; --line:#e4d9c6;
+    --focus-bg:#1f2a28; --focus-ink:#eaf3ef; --teal:#79b7a4; --teal-d:#4f8f7d;
+    --amber:#e0a85a; --amber-d:#c8893a; --accent:#c8893a;
+    --shadow:0 18px 40px rgba(60,45,20,.16);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+    color:var(--ink);
+    background:radial-gradient(120% 120% at 50% 0%,var(--bg1),var(--bg2));
+    min-height:100%;display:flex;flex-direction:column;align-items:center;
+    padding:26px 16px 48px;user-select:none;
+  }
+  .wrap{width:100%;max-width:600px;display:flex;flex-direction:column;align-items:center;gap:20px}
+  .main{display:flex;gap:28px;align-items:center;justify-content:center;width:100%}
+  .col-left{display:flex;flex-direction:column;align-items:center;gap:14px;flex:0 0 auto}
+  .col-right{flex:0 0 244px;max-width:244px}
+  @media(max-width:600px){
+    .main{flex-direction:column;align-items:center;gap:18px}
+    .col-right{width:100%;max-width:300px;flex-basis:auto}
+  }
+  header{text-align:center}
+  header h1{font-size:22px;margin:0 0 4px;letter-spacing:-.4px}
+  header p{margin:0;color:var(--muted);font-size:13px}
+
+  /* 상태 배지 */
+  .badge{display:inline-flex;align-items:center;gap:8px;padding:7px 16px;border-radius:999px;font-size:13px;font-weight:700;
+    background:#efe6d6;color:var(--accent);border:1px solid var(--line);transition:.3s}
+  .badge .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);transition:.3s}
+  .badge[data-s="RUNNING"]{background:#1f2a28;color:var(--teal);border-color:#2f3f3b}
+  .badge[data-s="RUNNING"] .dot{background:var(--teal);animation:pulse 1.4s infinite}
+  .badge[data-s="PAUSED"]{background:#efe7f3;color:#7a5aa8;border-color:#e0d2ec}
+  .badge[data-s="PAUSED"] .dot{background:#7a5aa8}
+  .badge[data-s="DONE"]{background:#e6f3ea;color:#3f8f5f;border-color:#cfe8d6}
+  .badge[data-s="DONE"] .dot{background:#3f8f5f}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(121,183,164,.6)}70%{box-shadow:0 0 0 9px rgba(121,183,164,0)}100%{box-shadow:0 0 0 0 rgba(121,183,164,0)}}
+
+  /* 카드 (모래시계 + 남은시간) */
+  .stage{perspective:1300px;width:262px;height:386px;display:flex;align-items:center;justify-content:center}
+  .card{width:100%;height:100%;border-radius:26px;background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:14px 16px 12px;position:relative;cursor:grab;
+    transition:background .5s,border-color .5s;touch-action:none}
+  .card:active{cursor:grabbing}
+  .card.focus{background:var(--focus-bg);border-color:#2f3f3b;color:var(--focus-ink)}
+  .card .hint-top{font-size:12px;font-weight:700;color:var(--muted);height:16px;transition:.3s}
+  .card.focus .hint-top{color:var(--teal)}
+  .glass{width:196px;height:262px;margin-top:2px;transform-style:preserve-3d;will-change:transform}
+  .glass.flip{animation:flip .66s cubic-bezier(.5,.05,.3,1)}
+  @keyframes flip{0%{transform:rotateX(0)}100%{transform:rotateX(360deg)}}
+  .glass canvas{display:block;width:196px;height:262px}
+  .time{font-variant-numeric:tabular-nums;font-weight:800;font-size:36px;letter-spacing:1px;margin-top:4px;transition:color .4s}
+  .card.focus .time{color:var(--focus-ink)}
+  .time small{font-size:13px;font-weight:600;color:var(--muted);margin-left:4px}
+  .card.focus .time small{color:var(--teal)}
+
+  /* 컨트롤 */
+  .controls{display:flex;gap:10px;align-items:center}
+  button{font-family:inherit;font-size:13px;font-weight:700;border-radius:12px;border:1px solid var(--line);
+    background:#fff;color:var(--ink);padding:10px 18px;cursor:pointer;transition:.15s}
+  button:hover{transform:translateY(-1px)}
+  .controls{width:100%;max-width:262px}
+  #resetBtn{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;height:50px;border-radius:14px;
+    font-weight:800;font-size:15px;background:#efe6d6;border:1.5px solid var(--accent);color:var(--accent-d);transition:.2s}
+  #resetBtn:hover{transform:translateY(-1px)}
+  #resetBtn.idle{opacity:.32;pointer-events:none}
+  #resetBtn.primary{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 8px 18px rgba(200,137,58,.4);animation:pulseBtn .6s ease}
+  @keyframes pulseBtn{0%{transform:scale(1)}50%{transform:scale(1.05)}100%{transform:scale(1)}}
+
+  /* ===== 슬림 상태 레일 ===== */
+  .rail{width:100%;background:#fbf7ef;border:1px solid var(--line);border-radius:18px;padding:14px 16px;box-shadow:var(--shadow)}
+  .flow{display:flex;align-items:center;justify-content:space-between;gap:2px;margin-bottom:8px}
+  .flow .node{font-size:10px;font-weight:700;color:var(--muted);padding:5px 6px;border-radius:7px;background:#efe6d6;border:1px solid transparent;transition:.25s;white-space:nowrap}
+  .flow .node.active{color:#fff;background:var(--accent);border-color:var(--accent);box-shadow:0 3px 8px rgba(200,137,58,.35)}
+  .flow .arrow{color:#c9bca5;font-size:9px}
+  .stat-row{display:flex;justify-content:space-between;align-items:center;padding:11px 2px;border-bottom:1px solid #f1e8d7}
+  .stat-row:last-child{border-bottom:none}
+  .stat-row .k{font-size:12px;font-weight:700;color:var(--muted)}
+  .stat-row .v{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink)}
+
+  .toast{position:fixed;left:50%;bottom:32px;background:#2b2622;color:#fff;padding:11px 18px;border-radius:12px;font-size:13px;font-weight:600;
+    opacity:0;pointer-events:none;transition:.25s;transform:translateX(-50%) translateY(20px)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>모래시계 ⏳</h1>
+    </header>
+
+    <div class="main">
+    <div class="col-left">
+
+    <div class="badge" id="badge" data-s="IDLE"><span class="dot"></span><span id="badgeText">대기</span></div>
+
+    <div class="stage">
+      <div class="card" id="card">
+        <div class="hint-top" id="hintTop">↑ 위로 드래그해서 채우기</div>
+        <div class="glass" id="glass"><canvas id="hg" width="196" height="262"></canvas></div>
+        <div class="time" id="time">00:00<small id="timeUnit"></small></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="resetBtn">↺ 리셋</button>
+    </div>
+
+    </div><!-- /col-left -->
+
+    <div class="col-right">
+    <div class="rail">
+      <div class="flow" id="flow">
+        <span class="node" data-s="IDLE">대기</span><span class="arrow">›</span>
+        <span class="node" data-s="CHARGING">충전</span><span class="arrow">›</span>
+        <span class="node" data-s="RUNNING">집중</span><span class="arrow">⇄</span>
+        <span class="node" data-s="PAUSED">정지</span><span class="arrow">›</span>
+        <span class="node" data-s="DONE">완료</span>
+      </div>
+      <div class="stat-row"><span class="k">경과 시간</span><span class="v" id="dElapsed">00:00</span></div>
+      <div class="stat-row"><span class="k">진행률</span><span class="v" id="dProg">0%</span></div>
+      <div class="stat-row"><span class="k">충전 용량</span><span class="v" id="dCharged">—</span></div>
+    </div>
+    </div><!-- /col-right -->
+    </div><!-- /main -->
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  "use strict";
+  // ===== 상수 =====
+  const CAPACITY = 2700;     // 충전 가능한 최대 에너지(초) = 45:00
+  const SEC_PER_PX = 12;     // 드래그 1px당 충전 시간(초)
+  const TAP_THRESHOLD = 8;
+  const TICK_MS = 100;
+  const REPOSE = Math.tan(32*Math.PI/180); // 안식각 ≈ 32° → 경사 ≈ 0.625
+
+  // ===== 변수/상태 =====
+  let state="IDLE", energy=0, charged=0, ticker=null, lastTickAt=0;
+  let pressing=false, startY=0, energyAtPress=0, isDrag=false;
+
+  const $=id=>document.getElementById(id);
+  const card=$("card"), glass=$("glass"), badge=$("badge"), badgeText=$("badgeText"),
+        timeEl=$("time"), timeUnit=$("timeUnit"), hintTop=$("hintTop"),
+        resetBtn=$("resetBtn"), toast=$("toast"),
+        flowNodes=[...document.querySelectorAll("#flow .node")],
+        dElapsed=$("dElapsed"), dProg=$("dProg"), dCharged=$("dCharged");
+
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  function fmt(sec){sec=Math.max(0,Math.round(sec));const m=Math.floor(sec/60),s=sec%60;return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");}
+  let toastTimer=null;function showToast(m){toast.textContent=m;toast.classList.add("show");clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove("show"),1600);}
+  function flipAnim(){glass.classList.remove("flip");void glass.offsetWidth;glass.classList.add("flip");}
+
+  const META={
+    IDLE:{txt:"대기",hint:"↑ 위로 드래그해서 채우기"},
+    CHARGING:{txt:"충전 중",hint:"탭 하면 집중 시작"},
+    RUNNING:{txt:"집중 중",hint:"집중 중 · 탭하면 일시정지"},
+    PAUSED:{txt:"일시정지",hint:"탭하면 이어서 집중"},
+    DONE:{txt:"완료 🎉",hint:"세션 완료"}
+  };
+
+  // ===== DOM 렌더 (배지 + 슬림 레일) =====
+  function render(){
+    const m=META[state];
+    badge.dataset.s=state; badgeText.textContent=m.txt;
+    hintTop.textContent=m.hint;
+    card.classList.toggle("focus",state==="RUNNING");
+    flowNodes.forEach(n=>n.classList.toggle("active",n.dataset.s===state));
+    // 리셋 버튼 강조/노출
+    resetBtn.classList.toggle("idle",state==="IDLE");
+    resetBtn.classList.toggle("primary",state==="DONE");
+    resetBtn.textContent=(state==="DONE")?"↺ 새 세션":"↺ 리셋";
+
+    timeEl.firstChild.nodeValue=fmt(energy);
+    timeUnit.textContent=(state==="IDLE")?"":(state==="CHARGING")?" 충전됨":(state==="DONE")?" 완료":" 남음";
+
+    // 보조 수치 (모래시계·배지와 중복되지 않는 것만)
+    const session=(state==="RUNNING"||state==="PAUSED"||state==="DONE");
+    const elapsed=session?Math.max(0,charged-energy):0;
+    const prog=(session&&charged>0)?clamp((charged-energy)/charged,0,1):0;
+    dElapsed.textContent=fmt(elapsed);
+    dProg.textContent=Math.round(prog*100)+"%";
+    dCharged.textContent=session?fmt(charged):(state==="CHARGING"?fmt(energy):"—");
+  }
+
+  /* =========================================================
+     모래시계 캔버스 물리 시뮬레이션 (질량 보존)
+       topFrac = energy / CAPACITY                (상부 모래량, 절대 비율)
+       botFrac = (charged - energy) / CAPACITY    (하부 쌓인 양, 절대 비율)
+       → 충전한 만큼만 보이고, 위에서 빠진 양이 그대로 아래에 쌓임
+     ========================================================= */
+  const cv=$("hg"), ctx=cv.getContext("2d");
+  const CSSW=196, CSSH=262;
+  (function(){const dpr=window.devicePixelRatio||1;cv.width=Math.round(CSSW*dpr);cv.height=Math.round(CSSH*dpr);cv.style.width=CSSW+"px";cv.style.height=CSSH+"px";ctx.setTransform(dpr,0,0,dpr,0,0);})();
+
+  const cx=98, TOP_Y=22, NECK_Y=131, BOT_Y=240, HALF_TOP=66, HALF_BOT=66, NECK_HALF=5;
+  const H_TOP=NECK_Y-TOP_Y, H_BOT=BOT_Y-NECK_Y;
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const topHalf=y=>lerp(HALF_TOP,NECK_HALF,(y-TOP_Y)/H_TOP);
+  const botHalf=y=>lerp(NECK_HALF,HALF_BOT,(y-NECK_Y)/H_BOT);
+
+  function pathTop(){ctx.beginPath();ctx.moveTo(cx-HALF_TOP,TOP_Y);ctx.lineTo(cx+HALF_TOP,TOP_Y);ctx.lineTo(cx+NECK_HALF,NECK_Y);ctx.lineTo(cx-NECK_HALF,NECK_Y);ctx.closePath();}
+  function pathBot(){ctx.beginPath();ctx.moveTo(cx-NECK_HALF,NECK_Y);ctx.lineTo(cx+NECK_HALF,NECK_Y);ctx.lineTo(cx+HALF_BOT,BOT_Y);ctx.lineTo(cx-HALF_BOT,BOT_Y);ctx.closePath();}
+  function rrect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+  function sandGrad(y0,y1,focus){const g=ctx.createLinearGradient(0,y0,0,y1);if(focus){g.addColorStop(0,"#a6d6c6");g.addColorStop(1,"#5fa28e");}else{g.addColorStop(0,"#f0c987");g.addColorStop(1,"#d2954a");}return g;}
+
+  // 정적 스페클(모래 질감)
+  const speckTop=[], speckBot=[];
+  (function(){let s=98765;const rnd=()=>{s=(s*1103515245+12345)&0x7fffffff;return s/0x7fffffff;};
+    for(let i=0;i<150;i++)speckTop.push([cx+(rnd()*2-1)*HALF_TOP,TOP_Y+rnd()*H_TOP,rnd()]);
+    for(let i=0;i<170;i++)speckBot.push([cx+(rnd()*2-1)*HALF_BOT,NECK_Y+rnd()*H_BOT,rnd()]);})();
+  function speckle(list,test,focus){ctx.fillStyle=focus?"rgba(30,66,56,.16)":"rgba(150,95,30,.18)";for(const p of list){if(test(p[0],p[1])){ctx.beginPath();ctx.arc(p[0],p[1],0.5+p[2]*0.6,0,7);ctx.fill();}}}
+
+  // 하부 더미: 안식각 원뿔, 넓이가 botFrac에 정확히 비례하도록 peakY 이진탐색
+  function pileArea(peakY){let a=0;for(let y=NECK_Y;y<=BOT_Y;y++){a+=2*Math.min(botHalf(y),Math.max(0,(y-peakY)/REPOSE));}return a;}
+  const A_FULL=pileArea(NECK_Y-500);
+  let curPeakY=BOT_Y;
+  function pilePeakY(botFrac){
+    const target=clamp(botFrac,0,1)*A_FULL;
+    let lo=NECK_Y-200, hi=BOT_Y+2;
+    for(let i=0;i<24;i++){const mid=(lo+hi)/2; if(pileArea(mid)>target) lo=mid; else hi=mid;}
+    return (lo+hi)/2;
+  }
+  function heapSurfaceY(x){return Math.min(BOT_Y,curPeakY+REPOSE*Math.abs(x-cx));}
+
+  // 낙하 입자(스트림)
+  const grains=[];
+  function spawnGrains(){if(grains.length>54)return;for(let i=0;i<2;i++)grains.push({x:cx+(Math.random()*2-1)*2.2,y:NECK_Y+2,vy:0.5+Math.random()*0.6,r:0.9+Math.random()*0.8});}
+  function updateGrains(){for(let i=grains.length-1;i>=0;i--){const g=grains[i];g.vy+=0.05;g.y+=g.vy;g.x+=(Math.random()*2-1)*0.35;if(g.y>=heapSurfaceY(g.x)-0.5||g.y>=BOT_Y-0.5)grains.splice(i,1);}}
+
+  function drawGlassBG(){[[pathTop,TOP_Y,NECK_Y],[pathBot,NECK_Y,BOT_Y]].forEach(([p,y0,y1])=>{ctx.save();p();ctx.clip();const g=ctx.createLinearGradient(0,y0,0,y1);g.addColorStop(0,"rgba(255,255,255,.5)");g.addColorStop(1,"rgba(214,226,228,.2)");ctx.fillStyle=g;ctx.fillRect(0,0,CSSW,CSSH);ctx.restore();});}
+
+  function drawTopSand(topFrac,focus,draining){
+    if(topFrac<=0.002)return;
+    const ySurf=NECK_Y-H_TOP*Math.sqrt(clamp(topFrac,0,1)); // 넓이 비례(역삼각형)
+    ctx.save();pathTop();ctx.clip();
+    ctx.fillStyle=sandGrad(ySurf,NECK_Y,focus);
+    ctx.fillRect(0,ySurf-2,CSSW,NECK_Y-ySurf+4);
+    speckle(speckTop,(x,y)=>y>=ySurf,focus);
+    if(draining){
+      // 빠질 때: 중앙 크레이터(저압 공동) — 안식각 경사, 빠질수록 깊고 넓게
+      const cD=Math.min(NECK_Y-ySurf, (1-topFrac)*H_TOP*0.95+5);
+      const cW=Math.min(topHalf(ySurf)*0.98, cD/REPOSE);
+      ctx.globalCompositeOperation="destination-out";
+      ctx.beginPath();ctx.moveTo(cx-cW,ySurf-2);ctx.lineTo(cx,ySurf+cD);ctx.lineTo(cx+cW,ySurf-2);ctx.closePath();ctx.fill();
+      ctx.globalCompositeOperation="source-over";
+    }else{
+      // 부을 때: 가운데가 살짝 볼록한 더미(크레이터 없음)
+      const mW=topHalf(ySurf)*0.6, mH=Math.min(9,(NECK_Y-ySurf)*0.3);
+      ctx.fillStyle=sandGrad(ySurf-mH,NECK_Y,focus);
+      ctx.beginPath();ctx.moveTo(cx-mW,ySurf+0.5);ctx.quadraticCurveTo(cx,ySurf-mH,cx+mW,ySurf+0.5);ctx.closePath();ctx.fill();
+    }
+    ctx.restore();
+  }
+  function drawHeap(botFrac,focus){
+    if(botFrac<=0.002){curPeakY=BOT_Y;return;}
+    curPeakY=pilePeakY(botFrac);
+    ctx.save();pathBot();ctx.clip();
+    ctx.fillStyle=sandGrad(curPeakY,BOT_Y,focus);
+    ctx.beginPath();ctx.moveTo(cx-HALF_BOT,BOT_Y+1);
+    for(let x=cx-HALF_BOT;x<=cx+HALF_BOT;x+=2)ctx.lineTo(x,Math.min(BOT_Y,curPeakY+REPOSE*Math.abs(x-cx)));
+    ctx.lineTo(cx+HALF_BOT,BOT_Y+1);ctx.closePath();ctx.fill();
+    speckle(speckBot,(x,y)=>y>=heapSurfaceY(x),focus);
+    ctx.restore();
+  }
+  function drawGrains(focus){if(!grains.length)return;ctx.save();pathBot();ctx.clip();ctx.fillStyle=focus?"#d6efe6":"#f3dcab";for(const g of grains){ctx.beginPath();ctx.arc(g.x,g.y,g.r,0,7);ctx.fill();}ctx.restore();}
+  function drawPosts(){ctx.fillStyle="#b69264";[cx-HALF_TOP-12,cx+HALF_TOP+6].forEach(px=>{rrect(px,TOP_Y-4,6,BOT_Y-TOP_Y+8,3);ctx.fill();});}
+  function drawCapBar(y){const g=ctx.createLinearGradient(0,y,0,y+15);g.addColorStop(0,"#c9a479");g.addColorStop(1,"#a8835a");ctx.fillStyle=g;rrect(cx-HALF_TOP-16,y,(HALF_TOP+16)*2,15,5);ctx.fill();ctx.fillStyle="rgba(255,255,255,.10)";rrect(cx-HALF_TOP-16,y,(HALF_TOP+16)*2,5,5);ctx.fill();}
+  function drawGlassEdge(){ctx.lineJoin="round";ctx.strokeStyle="rgba(150,135,108,.6)";ctx.lineWidth=2.2;pathTop();ctx.stroke();pathBot();ctx.stroke();ctx.save();pathTop();ctx.clip();ctx.globalAlpha=.16;ctx.fillStyle="#fff";ctx.beginPath();ctx.moveTo(cx-HALF_TOP+9,TOP_Y+5);ctx.lineTo(cx-HALF_TOP+19,TOP_Y+5);ctx.lineTo(cx-7,NECK_Y);ctx.lineTo(cx-15,NECK_Y);ctx.closePath();ctx.fill();ctx.restore();}
+
+  function computeTargets(){
+    let topF,botF,focus=(state==="RUNNING"),draining=(state==="RUNNING"||state==="PAUSED");
+    if(state==="IDLE"){topF=0;botF=0;draining=false;}
+    else if(state==="CHARGING"){topF=energy/CAPACITY;botF=0;draining=false;}
+    else if(state==="DONE"){topF=0;botF=charged/CAPACITY;draining=false;}
+    else{topF=energy/CAPACITY;botF=(charged-energy)/CAPACITY;}
+    return {topF:clamp(topF,0,1),botF:clamp(botF,0,1),focus,draining};
+  }
+  let visTop=0,visBot=0;
+  function loop(){
+    const t=computeTargets();
+    visTop+=(t.topF-visTop)*0.22; visBot+=(t.botF-visBot)*0.22;
+    if(state==="RUNNING"&&energy>0)spawnGrains();
+    updateGrains();
+    ctx.clearRect(0,0,CSSW,CSSH);
+    drawPosts();drawGlassBG();
+    drawTopSand(visTop,t.focus,t.draining);
+    drawHeap(visBot,t.focus);
+    drawGrains(t.focus);
+    drawGlassEdge();drawCapBar(TOP_Y-14);drawCapBar(BOT_Y-1);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ===== 상태 전이 =====
+  function toIdle(){state="IDLE";energy=0;charged=0;grains.length=0;stopTick();render();}
+  function startCharging(){if(state==="IDLE")state="CHARGING";}
+  function commitCharge(){if(state==="CHARGING"){if(energy<=0){toIdle();}else{render();}}}
+  function startFocus(){charged=energy;state="RUNNING";grains.length=0;flipAnim();startTick();render();}
+  function pauseFocus(){state="PAUSED";stopTick();flipAnim();render();}
+  function resumeFocus(){state="RUNNING";flipAnim();startTick();render();}
+  function finish(){energy=0;state="DONE";stopTick();render();showToast("집중 완료! 🎉");buzz();}
+  function handleTap(){
+    if(state==="IDLE"){showToast("먼저 위로 드래그해 시간을 채우세요");return;}
+    if(state==="CHARGING"){startFocus();return;}
+    if(state==="RUNNING"){pauseFocus();return;}
+    if(state==="PAUSED"){resumeFocus();return;}
+  }
+  function startTick(){stopTick();lastTickAt=Date.now();ticker=setInterval(()=>{const now=Date.now(),dt=(now-lastTickAt)/1000;lastTickAt=now;energy=clamp(energy-dt,0,CAPACITY);if(energy<=0){finish();return;}render();},TICK_MS);}
+  function stopTick(){if(ticker){clearInterval(ticker);ticker=null;}}
+  function buzz(){try{if(navigator.vibrate)navigator.vibrate([60,40,60]);}catch(e){}}
+
+  // ===== 포인터 입력 =====
+  card.addEventListener("pointerdown",e=>{pressing=true;isDrag=false;startY=e.clientY;energyAtPress=energy;try{card.setPointerCapture(e.pointerId);}catch(_){}});
+  card.addEventListener("pointermove",e=>{
+    if(!pressing)return;
+    const dy=startY-e.clientY; // 위로 끌면 +
+    if(Math.abs(dy)>=TAP_THRESHOLD)isDrag=true;
+    if(!isDrag)return;
+    const canCharge=(state==="IDLE"&&dy>0)||state==="CHARGING"; // 대기에선 위로 끌 때만 시작
+    if(canCharge){startCharging();energy=clamp(energyAtPress+dy*SEC_PER_PX,0,CAPACITY);render();}
+  });
+  function endPress(){if(!pressing)return;pressing=false;if(isDrag)commitCharge();else handleTap();}
+  card.addEventListener("pointerup",endPress);
+  card.addEventListener("pointercancel",endPress);
+
+  let resetArmed=false, resetArmTimer=null;
+  resetBtn.addEventListener("click",()=>{
+    // 집중 중 실수 리셋 방지: 한 번 더 눌러야 실제 리셋
+    if(state==="RUNNING"&&!resetArmed){resetArmed=true;showToast("한 번 더 눌러 리셋");clearTimeout(resetArmTimer);resetArmTimer=setTimeout(()=>resetArmed=false,2000);return;}
+    resetArmed=false;clearTimeout(resetArmTimer);toIdle();
+  });
+
+  render();
+
+  // (선택) 스크린샷/시연용 프리셋 — ?state=charging|running|paused|done
+  const _p=new URLSearchParams(location.search).get("state");
+  if(_p){
+    if(_p==="charging"){state="CHARGING";energy=1320;visTop=energy/CAPACITY;}
+    else if(_p==="running"){charged=1500;energy=900;state="RUNNING";visTop=energy/CAPACITY;visBot=(charged-energy)/CAPACITY;for(let i=0;i<22;i++)spawnGrains();}
+    else if(_p==="paused"){charged=1500;energy=600;state="PAUSED";visTop=energy/CAPACITY;visBot=(charged-energy)/CAPACITY;}
+    else if(_p==="done"){charged=1500;energy=0;state="DONE";visTop=0;visBot=charged/CAPACITY;}
+    render();
+  }
+})();
+</script>
+</body>
+</html>
